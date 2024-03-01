@@ -1,9 +1,11 @@
 import express from "express";
 import bodyParser from "body-parser";
 import pg from 'pg';
+import bcrpyt from 'bcrypt';
 
 const app = express();
 const port = 3000;
+const saltrounds = 10;
 
 const db = new pg.Client({
   user : 'postgres',
@@ -42,12 +44,21 @@ app.post("/register", async (req, res) => {
       res.send("email already exist. Try logging in");
     }
     else{
-      const result = await db.query(
-        "INSERT INTO users(email, password) VALUES ($1, $2)",
-        [email, password]
-      );
-      console.log(result);
-      res.render("secrets.ejs");
+      //password hashing
+      bcrpyt.hash(password, saltrounds, async (err, hash)=>{
+        if(err){
+          console.log("password hashing error: ", err);
+        }
+        else{
+          const result = await db.query(
+            "INSERT INTO users(email, password) VALUES ($1, $2)",
+            [email, hash]
+          );
+          console.log(result);
+          res.render("secrets.ejs");
+        }
+      })
+
     }
   } catch(err){
     console.log(err);
@@ -58,7 +69,7 @@ app.post("/register", async (req, res) => {
 
 app.post("/login", async (req, res) => {
   const email = req.body.username;
-  const password = req.body.password;
+  const loginPassword = req.body.password;
 
   try{
     const result = await db.query(
@@ -66,13 +77,21 @@ app.post("/login", async (req, res) => {
     );
 
     if(result.rows.length > 0){
-      const storedPassword = result.rows[0].password;
-      if(password === storedPassword){
-        res.render("secrets.ejs");
-      }
-      else{
-        res.send("incorrect password");
-      }
+      const storedHashedPassword = result.rows[0].password;
+
+      bcrpyt.compare(loginPassword, storedHashedPassword, (err, result)=>{
+        if(err){
+          console.log("error message: ", err);
+        }
+        else{
+          if(result){
+            res.render("secrets.ejs");
+          }
+          else{
+            res.send("incorrect password");
+          }
+        }
+      })
     }
     else{
       res.send('you are not registered yet');
